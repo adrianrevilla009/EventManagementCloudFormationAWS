@@ -1,0 +1,153 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: CloudFormation template for EC2 RDS and S3 services
+
+Parameters:
+  DBPassword:   # DB password
+    Description: Database password
+    Type: String
+    NoEcho: true
+    MinLength: 8
+  KeyName:    # ec2 access key pair
+    Description: Key pair to use in EC2 instance
+    Type: AWS::EC2::KeyPair::KeyName
+  EC2InstanceRole:  # ec2 role on IAM profile for S3 access
+    Description: EC2 instance role
+    Type: String
+  RdsEndpointParam:
+    Description: RDS endpoint url
+    Type: String
+  RdsDatabase:
+    Description: RDS database name
+    Type: String
+  RdsUser:
+    Description: RDS user name
+    Type: String
+  BucketName:
+    Description: S3 bucket name
+    Type: String
+  Region:
+    Description: Region name
+    Type: String
+
+Resources:
+  rdsDBInstance:  # RDS database
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceClass: "db.t2.micro"
+      AllocatedStorage: 10
+      AllowMajorVersionUpgrade: false
+      AutoMinorVersionUpgrade: true
+      DBInstanceIdentifier: events
+      DBName: events
+      Engine: mysql
+      EngineVersion: 5.7
+      MasterUsername: events
+      MasterUserPassword: !Ref DBPassword   # parametrized password reference
+      MultiAZ: false
+      PubliclyAccessible: true
+      StorageEncrypted: false
+      VPCSecurityGroups:
+        - !GetAtt rdsSecurityGroup.GroupId  # get SG as attribute from created rds security group
+      Tags:
+        - Key: Name
+          Value: cf-sample-4-rds
+  rdsSecurityGroup: # RDS security group
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "SG for MySQL events RDS"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '3306'
+          ToPort: '3306'
+          SourceSecurityGroupName: !Ref ec2SecurityGroup  # reference ec2 security group only to be accessible for that instance
+    myEC2Instance:  # EC2 instance
+      Type: AWS::EC2::Instance
+      DependsOn: rdsDBInstance
+      Properties:
+        KeyName: !Ref KeyName   # parametrized key name reference
+        ImageId: ami-0557a15b87f6559cf
+        InstanceType: "t2.micro"
+        IamInstanceProfile: !Ref EC2InstanceRole  # needed IAM role to allow permission to some aws services
+        Monitoring: true
+        SecurityGroups:
+          - !Ref ec2SecurityGroup   # reference created SG for ec2 instance
+        UserData:
+          Fn::Base64:
+            Fn::Sub:
+              - |
+                #!/bin/bash -ex
+                apt-get update && apt-get install -y openjdk-8-jre-headless
+                wget https://s3.amazonaws.com/practica-2.cloud.michel/practica_1_cloud_ordinaria.jar
+                java -jar practica_1_cloud_ordinaria.jar --RDS_ENDPOINT=${RdsEndpointParam} --RDS_DATABASE=${RdsDatabaseParam} \
+                --RDS_USER=${RdsUserParam} --RDS_PASS=${RdsPassParam} --BUCKET_NAME=${BucketNameParam} --REGION=${RegionParam}
+              - RdsEndpointParam: !Ref RdsEndpoint  # parametrized attributes reference
+              - RdsDatabaseParam: !Ref RdsDatabase
+              - RdsUserParam: !Ref RdsUser
+              - RdsPassParam: !Ref DBPassword
+              - BucketNameParam: !Ref BucketName
+              - RegionParam: !Ref Region
+        Tags:
+          - Key: Name
+            Value: cf-sample-5
+    ec2SecurityGroup: # EC2 security group
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupName: spring-8080-8443
+        GroupDescription: "SG for Nginx with egress ports 80 & 443"
+        SecurityGroupIngress:
+          - IpProtocol: tcp
+            FromPort: '8080'
+            ToPort: '8080'
+            CidrIp: 0.0.0.0/0
+          - IpProtocol: tcp
+            FromPort: '8443'
+            ToPort: '8443'
+            CidrIp: 0.0.0.0/0
+    S3FullAccessRole:   # Role with full s3 access
+      Type: 'AWS::IAM::Role'
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - ec2.amazonaws.com
+              Action:
+                - 'sts:AssumeRole'
+        Path: /
+        Policies:
+          - PolicyName: root
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - 's3:*'
+                    - 's3-object-lambda:*'
+                  Resource: '*'                   # TODO aqui limitamos que la app solo pueda acceder al bucket -> cambiar esto
+    iamProfile:   # IAM profile to connect to s3 bucket associated to s3 full access policy role
+      Type: 'AWS::IAM::InstanceProfile'
+      Properties:
+        Path: /
+        Roles:
+          - !Ref S3FullAccessRole
+    S3Bucket:   # Bucket S3
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: events-bucket
+        AccessControl: PublicRead
+        WebsiteConfiguration:
+          IndexDocument: index.html
+          ErrorDocument: error.html
+
+Outputs:
+  WebSiteURL:
+    Value:
+      !Join
+      - ''
+      - - "https://"
+        - !GetAtt myEC2Instance.PublicDnsName
+        - ":8443/"
+        - "api/events"
+    Description: "Events rest api"
