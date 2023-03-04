@@ -10,9 +10,6 @@ Parameters:
   KeyName:    # ec2 access key pair
     Description: Key pair to use in EC2 instance
     Type: AWS::EC2::KeyPair::KeyName
-  EC2InstanceRole:  # ec2 role on IAM profile for S3 access
-    Description: EC2 instance role
-    Type: String
   RdsEndpoint:
     Description: RDS endpoint url
     Type: String
@@ -67,25 +64,15 @@ Resources:
       KeyName: !Ref KeyName   # parametrized key name reference
       ImageId: ami-0557a15b87f6559cf
       InstanceType: "t2.micro"
-      IamInstanceProfile: !Ref EC2InstanceRole  # needed IAM role to allow permission to some aws services
+      IamInstanceProfile: !Ref IAMProfile  # needed IAM role to allow permission to some aws services
       Monitoring: true
       SecurityGroups:
         - !Ref ec2SecurityGroup   # reference created SG for ec2 instance
-      UserData:
-        Fn::Base64:
-          Fn::Sub:
-            - |
-              #!/bin/bash -ex
-              apt-get update && apt-get install -y openjdk-8-jre-headless
-              wget https://s3.amazonaws.com/practica-2.cloud.michel/practica_1_cloud_ordinaria.jar
-              java -jar practica_1_cloud_ordinaria.jar --RDS_ENDPOINT=${RdsEndpointParam} --RDS_DATABASE=${RdsDatabaseParam} \
-              --RDS_USER=${RdsUserParam} --RDS_PASS=${RdsPassParam} --BUCKET_NAME=${BucketNameParam} --REGION=${RegionParam}
-            - RdsEndpointParam: !Ref RdsEndpoint  # parametrized attributes reference
-              RdsDatabaseParam: !Ref RdsDatabase
-              RdsUserParam: !Ref RdsUser
-              RdsPassParam: !Ref DBPassword
-              BucketNameParam: !Ref BucketName
-              RegionParam: !Ref Region
+      UserData: !Base64 |
+        #!/bin/bash -ex
+        apt-get update && apt-get install -y openjdk-8-jre-headless
+        wget https://github.com/MasterCloudApps/2.2.Patrones-y-arquitecturas-de-servicios-web/releases/download/0.1.0/blog-cqrs-ejem1-1.0.0.jar
+        java -jar blog-cqrs-ejem1-1.0.0.jar
       Tags:
         - Key: Name
           Value: cf-sample-5
@@ -102,6 +89,10 @@ Resources:
         - IpProtocol: tcp
           FromPort: '8443'
           ToPort: '8443'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
           CidrIp: 0.0.0.0/0
   S3FullAccessRole:   # Role with full s3 access
     Type: 'AWS::IAM::Role'
@@ -126,7 +117,7 @@ Resources:
                   - 's3:*'
                   - 's3-object-lambda:*'
                 Resource: '*'                   # TODO aqui limitamos que la app solo pueda acceder al bucket -> cambiar esto
-  iamProfile:   # IAM profile to connect to s3 bucket associated to s3 full access policy role
+  IAMProfile:   # IAM profile to connect to s3 bucket associated to s3 full access policy role
     Type: 'AWS::IAM::InstanceProfile'
     Properties:
       Path: /
