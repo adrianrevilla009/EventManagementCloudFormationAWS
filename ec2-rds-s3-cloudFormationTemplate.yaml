@@ -10,8 +10,8 @@ Parameters:
   KeyName:    # ec2 access key pair
     Description: Key pair to use in EC2 instance
     Type: AWS::EC2::KeyPair::KeyName
-  RdsEndpoint:
-    Description: RDS endpoint url
+  JarDownloadUrl:
+    Description: RDS database name
     Type: String
   RdsDatabase:
     Description: RDS database name
@@ -34,11 +34,11 @@ Resources:
       AllocatedStorage: 10
       AllowMajorVersionUpgrade: false
       AutoMinorVersionUpgrade: true
-      DBInstanceIdentifier: events
-      DBName: events
+      DBInstanceIdentifier: !Ref RdsDatabase
+      DBName: !Ref RdsDatabase
       Engine: mysql
-      EngineVersion: 5.7
-      MasterUsername: events
+      EngineVersion: 8.0.28
+      MasterUsername: !Ref RdsUser
       MasterUserPassword: !Ref DBPassword   # parametrized password reference
       MultiAZ: false
       PubliclyAccessible: true
@@ -68,11 +68,23 @@ Resources:
       Monitoring: true
       SecurityGroups:
         - !Ref ec2SecurityGroup   # reference created SG for ec2 instance
-      UserData: !Base64 |
-        #!/bin/bash -ex
-        apt-get update && apt-get install -y openjdk-8-jre-headless
-        wget https://github.com/MasterCloudApps/2.2.Patrones-y-arquitecturas-de-servicios-web/releases/download/0.1.0/blog-cqrs-ejem1-1.0.0.jar
-        java -jar blog-cqrs-ejem1-1.0.0.jar
+      UserData:
+        Fn::Base64:
+          Fn::Sub:
+            - |
+              #!/bin/bash -ex
+              apt-get update && apt-get install -y openjdk-17-jre-headless
+              wget ${JarDownloadUrl}
+              java -jar practica_1_cloud_ordinaria.jar --RDS_ENDPOINT=${RdsEndpointParam} --RDS_DATABASE=${RdsDatabaseParam} \
+                --RDS_USER=${RdsUserParam} --RDS_PASS=${RdsPassParam} --BUCKET_NAME=${BucketNameParam} --REGION=${RegionParam} \
+                --spring.profiles.active=production --spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.MySQL8Dialect
+            - JarDownloadUrlParam: !Ref JarDownloadUrl
+              RdsEndpointParam: !GetAtt rdsDBInstance.Endpoint.Address  # parametrized attributes reference
+              RdsDatabaseParam: !Ref RdsDatabase
+              RdsUserParam: !Ref RdsUser
+              RdsPassParam: !Ref DBPassword
+              BucketNameParam: !Ref BucketName
+              RegionParam: !Ref Region
       Tags:
         - Key: Name
           Value: cf-sample-5
@@ -80,7 +92,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupName: spring-8080-8443
-      GroupDescription: "SG for Nginx with egress ports 80 & 443"
+      GroupDescription: "SG for Nginx with egress ports 80 & 443 & 22"
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: '8080'
