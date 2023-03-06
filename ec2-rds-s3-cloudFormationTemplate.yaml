@@ -75,7 +75,7 @@ Resources:
               #!/bin/bash -ex
               apt-get update && apt-get install -y openjdk-17-jre-headless
               wget ${JarDownloadUrl}
-              java -jar practica_1_cloud_ordinaria.jar --RDS_ENDPOINT=${RdsEndpointParam} --RDS_DATABASE=${RdsDatabaseParam} \
+              java -jar practica_1_cloud_ordinaria-0.0.1-SNAPSHOT.jar --RDS_ENDPOINT=${RdsEndpointParam} --RDS_DATABASE=${RdsDatabaseParam} \
                 --RDS_USER=${RdsUserParam} --RDS_PASS=${RdsPassParam} --BUCKET_NAME=${BucketNameParam} --REGION=${RegionParam} \
                 --spring.profiles.active=production --spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.MySQL8Dialect
             - JarDownloadUrlParam: !Ref JarDownloadUrl
@@ -128,6 +128,7 @@ Resources:
                 Action:
                   - 's3:*'
                   - 's3-object-lambda:*'
+                  - 'rds:DescribeDBInstances'
                 Resource: '*'                   # TODO aqui limitamos que la app solo pueda acceder al bucket -> cambiar esto
   IAMProfile:   # IAM profile to connect to s3 bucket associated to s3 full access policy role
     Type: 'AWS::IAM::InstanceProfile'
